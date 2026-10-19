@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Levantamento de IA</title>
+<style>
+  :root { --bg:#f4f7f6; --card:#fff; --ink:#1f2937; --mut:#6b7280; --line:#dfe6e4; --brand:#0e9f94; --brand-d:#0b7d74; --warn:#b45309; --err:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1716; --card:#172321; --ink:#e5eceb; --mut:#93a3a0; --line:#2a3b38; --brand:#2cc3b6; --brand-d:#2cc3b6; --warn:#f59e0b; --err:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 80px; }
+  header { margin-bottom: 18px; }
+  .marca { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--mut); }
+  h1 { margin:4px 0 6px; font-size: 26px; }
+  .intro { color:var(--mut); margin:0 0 6px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; }
+  h2 { margin:0 0 4px; font-size:17px; }
+  .sub { margin:0 0 12px; color:var(--mut); font-size:13.5px; }
+  label { display:block; font-size:13px; font-weight:600; margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--ink); font:inherit; }
+  textarea { min-height:78px; resize:vertical; }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--brand); outline-offset:1px; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; } .g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  @media (max-width: 640px) { .g2, .g3 { grid-template-columns:1fr; } }
+  table.meses { width:100%; border-collapse:collapse; margin-top:6px; }
+  table.meses td { padding:4px 6px 4px 0; vertical-align:middle; }
+  table.meses td.m { width:70px; font-weight:600; color:var(--mut); }
+  table.meses input, table.meses select { padding:8px 10px; }
+  .helper { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 2px; font-size:13px; color:var(--mut); }
+  button { font:inherit; cursor:pointer; border-radius:9px; padding:9px 14px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  button.pri { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; padding:12px 22px; }
+  button.pri:disabled { opacity:.6; cursor:wait; }
+  button.lnk { border:none; background:none; color:var(--brand-d); padding:4px 6px; }
+  button.del { border:none; background:none; color:var(--err); font-size:13px; }
+  .topo { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .erros { background:rgba(185,28,28,.08); border:1px solid var(--err); color:var(--err); border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:14px; }
+  .erros ul { margin:4px 0 0 18px; padding:0; }
+  .ok { text-align:center; padding:40px 18px; }
+  .ok h2 { font-size:22px; color:var(--brand-d); }
+  .nota { font-size:12.5px; color:var(--mut); margin-top:6px; }
+  .total { margin-top:8px; font-size:13.5px; color:var(--mut); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="marca">Grupo Consominas · Plano de entendimento e ativação do Claude Teams</div>
+    <h1>Levantamento de uso e custo de IA</h1>
+    <p class="intro">Informe as ferramentas de IA usadas e o custo mês a mês, <b>a partir de junho/2026</b>. Inclua o que foi pago no cartão corporativo e também o que entrou como reembolso (cartão pessoal). Preencha uma ferramenta por bloco; se usa várias, adicione quantos blocos precisar.</p>
+  </header>
+
+  <form id="f" novalidate>
+    <div class="card">
+      <h2>Quem está respondendo</h2>
+      <div class="g3">
+        <div><label for="nome">Nome</label><input id="nome" autocomplete="name" required></div>
+        <div><label for="email">E-mail corporativo</label><input id="email" type="email" autocomplete="email" required></div>
+        <div><label for="area">Área / equipe / contrato</label><input id="area" required placeholder="Ex.: Financeiro, MRN 3687"></div>
+      </div>
+    </div>
+    <div id="ferramentas"></div>
+    <div style="margin-bottom:18px"><button type="button" id="add">+ Adicionar outra ferramenta</button></div>
+    <div id="erros" class="erros" hidden></div>
+    <button class="pri" id="enviar" type="submit">Enviar respostas</button>
+    <p class="nota">As respostas ficam registradas neste sistema e são vistas apenas por quem conduz o levantamento.</p>
+  </form>
+  <div id="fim" class="card ok" hidden>
+    <h2>Resposta enviada. Obrigado!</h2>
+    <p>Se usa mais alguma ferramenta ou quer corrigir algo, é só enviar de novo.</p>
+    <button class="pri" id="outra" type="button">Enviar outra resposta</button>
+  </div>
+</div>
+
+<script>
+const MESES = ["2026-06","2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"];
+const NOME = {"06":"jun/26","07":"jul/26","08":"ago/26","09":"set/26","10":"out/26","11":"nov/26","12":"dez/26"};
+const FERRAMENTAS = ["ChatGPT","Claude","Gemini","Microsoft Copilot","GitHub Copilot","Cursor","Perplexity","Midjourney","NotebookLM","Outra"];
+const FORMAS = ["Cartão corporativo","Reembolso (cartão pessoal)","Outra"];
+const el = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+const raiz = document.getElementById("ferramentas");
+let n = 0;
+
+function bloco() {
+  n++;
+  const b = el(`<div class="card ferr">
+    <div class="topo"><h2>Ferramenta <span class="num"></span></h2><button type="button" class="del">remover</button></div>
+    <div class="g2">
+      <div><label>Qual ferramenta?</label><select class="fer">${FERRAMENTAS.map((x) => `<option>${x}</option>`).join("")}</select></div>
+      <div class="outraw" hidden><label>Qual?</label><input class="outra" maxlength="80"></div>
+    </div>
+    <label>Custo mensal e forma de pagamento (deixe em branco o mês em que não usou; use 0 se usou sem custo)</label>
+    <table class="meses"><tbody>${MESES.map((m) => `<tr data-m="${m}"><td class="m">${NOME[m.slice(5)]}</td><td><input class="custo" inputmode="decimal" placeholder="R$ 0,00"></td><td><select class="forma"><option value="">Forma de pagamento…</option>${FORMAS.map((x) => `<option>${x}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table>
+    <div class="helper"><span>Atalho:</span><button type="button" class="lnk rep">repetir o valor e a forma do primeiro mês preenchido nos meses seguintes</button></div>
+    <div class="total"></div>
+    <label>Uso / finalidade — para que a ferramenta tem sido usada?</label>
+    <textarea class="fin" maxlength="1500"></textarea>
+    <label>Justificativa — por que é necessária?</label>
+    <textarea class="jus" maxlength="1500"></textarea>
+  </div>`);
+  const fer = b.querySelector(".fer");
+  fer.addEventListener("change", () => { b.querySelector(".outraw").hidden = fer.value !== "Outra"; });
+  b.querySelector(".del").addEventListener("click", () => { if (document.querySelectorAll(".ferr").length > 1) { b.remove(); numerar(); } });
+  b.querySelector(".rep").addEventListener("click", () => {
+    const linhas = [...b.querySelectorAll("tr")]; const i = linhas.findIndex((r) => r.querySelector(".custo").value.trim() !== "");
+    if (i < 0) return; const c = linhas[i].querySelector(".custo").value, f = linhas[i].querySelector(".forma").value;
+    linhas.slice(i + 1).forEach((r) => { r.querySelector(".custo").value = c; r.querySelector(".forma").value = f; }); total(b);
+  });
+  b.addEventListener("input", () => total(b));
+  raiz.appendChild(b); numerar();
+}
+function numerar() { document.querySelectorAll(".ferr").forEach((b, i) => { b.querySelector(".num").textContent = i + 1; }); }
+function valor(s) { const v = Number(String(s).replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(v) ? v : 0; }
+function total(b) { const t = [...b.querySelectorAll(".custo")].reduce((s, i) => s + valor(i.value), 0); b.querySelector(".total").textContent = t ? "Total informado: R$ " + t.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""; }
+
+function coletar() {
+  return {
+    nome: document.getElementById("nome").value, email: document.getElementById("email").value, area: document.getElementById("area").value,
+    ferramentas: [...document.querySelectorAll(".ferr")].map((b) => ({
+      ferramenta: b.querySelector(".fer").value, outra: b.querySelector(".outra").value, finalidade: b.querySelector(".fin").value, justificativa: b.querySelector(".jus").value,
+      meses: [...b.querySelectorAll("tr")].map((r) => ({ mes: r.dataset.m, custo: r.querySelector(".custo").value.trim() === "" ? "" : String(valor(r.querySelector(".custo").value)).replace(".", ","), forma: r.querySelector(".forma").value })),
+    })),
+  };
+}
+document.getElementById("add").addEventListener("click", bloco);
+document.getElementById("outra").addEventListener("click", () => { document.getElementById("fim").hidden = true; document.getElementById("f").hidden = false; raiz.innerHTML = ""; n = 0; bloco(); window.scrollTo(0, 0); });
+document.getElementById("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const box = document.getElementById("erros"), btn = document.getElementById("enviar"); box.hidden = true; btn.disabled = true; btn.textContent = "Enviando…";
+  try {
+    const r = await fetch("/api/enviar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(coletar()) });
+    const d = await r.json();
+    if (!r.ok) { box.innerHTML = "<b>Confira antes de enviar:</b><ul>" + d.erros.map((x) => `<li>${x.replace(/</g, "&lt;")}</li>`).join("") + "</ul>"; box.hidden = false; box.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else { document.getElementById("f").hidden = true; document.getElementById("fim").hidden = false; window.scrollTo(0, 0); }
+  } catch { box.textContent = "Não foi possível enviar agora. Tente novamente em instantes."; box.hidden = false; }
+  btn.disabled = false; btn.textContent = "Enviar respostas";
+});
+bloco();
+</script>
+</body>
+</html>
