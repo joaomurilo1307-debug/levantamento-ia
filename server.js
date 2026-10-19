@@ -22,8 +22,10 @@ function lerTudo() {
 }
 function linhas(envios) {
   const out = [];
-  for (const e of envios) for (const f of e.ferramentas) for (const m of f.meses) {
-    out.push({ envioId: e.id, recebidoEm: e.recebidoEm, nome: e.nome, email: e.email, area: e.area, ferramenta: f.ferramenta, mes: m.mes, custo: m.custo, forma: m.forma, finalidade: f.finalidade, justificativa: f.justificativa });
+  for (const e of envios) {
+    const base = { envioId: e.id, recebidoEm: e.recebidoEm, nome: e.nome, email: e.email, area: e.area };
+    if (Array.isArray(e.linhas)) for (const l of e.linhas) out.push({ ...base, ferramenta: l.ferramenta, mes: l.mes, custo: l.custo, forma: l.forma, finalidade: l.finalidade, justificativa: l.justificativa });
+    else for (const f of e.ferramentas || []) for (const m of f.meses) out.push({ ...base, ferramenta: f.ferramenta, mes: m.mes, custo: m.custo, forma: m.forma, finalidade: f.finalidade, justificativa: f.justificativa });
   }
   return out;
 }
@@ -36,27 +38,23 @@ function validar(b) {
   if (nome.length < 3) erros.push("Informe seu nome.");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) erros.push("Informe um e-mail válido.");
   if (area.length < 2) erros.push("Informe sua área, equipe ou contrato.");
-  const ferramentas = [];
-  if (!Array.isArray(b.ferramentas) || b.ferramentas.length === 0 || b.ferramentas.length > 30) erros.push("Inclua pelo menos uma ferramenta.");
-  else b.ferramentas.forEach((f, i) => {
-    const nomeF = limpa(f.ferramenta === "Outra" ? f.outra : f.ferramenta, 80);
-    if (!nomeF) { erros.push(`Ferramenta ${i + 1}: informe qual é a ferramenta.`); return; }
-    const meses = [];
-    for (const m of Array.isArray(f.meses) ? f.meses : []) {
-      if (!MESES.includes(m.mes)) continue;
-      const custo = Number(String(m.custo ?? "").replace(/\./g, "").replace(",", "."));
-      if (m.custo === "" || m.custo === null || m.custo === undefined || Number.isNaN(custo) || custo < 0 || custo > 1_000_000) continue;
-      const forma = FORMAS.includes(m.forma) ? m.forma : "";
-      if (custo > 0 && !forma) { erros.push(`${nomeF}: escolha a forma de pagamento de ${mesTxt(m.mes)}.`); continue; }
-      meses.push({ mes: m.mes, custo: Math.round(custo * 100) / 100, forma: forma || "—" });
-    }
-    if (meses.length === 0) erros.push(`${nomeF}: informe o custo de pelo menos um mês (use 0 se não houve custo).`);
-    const finalidade = limpa(f.finalidade, 1500), justificativa = limpa(f.justificativa, 1500);
-    if (finalidade.length < 5) erros.push(`${nomeF}: descreva para que a ferramenta é usada.`);
-    if (justificativa.length < 5) erros.push(`${nomeF}: escreva a justificativa de uso.`);
-    ferramentas.push({ ferramenta: nomeF, meses, finalidade, justificativa });
+  const linhasOk = [];
+  if (!Array.isArray(b.linhas) || b.linhas.length === 0 || b.linhas.length > 400) erros.push("Inclua pelo menos uma linha (mês + ferramenta).");
+  else b.linhas.forEach((l, i) => {
+    const n = i + 1;
+    const ferramenta = limpa(l.ferramenta === "Outra" ? l.outra : l.ferramenta, 80);
+    if (!MESES.includes(l.mes)) { erros.push(`Linha ${n}: escolha o mês.`); return; }
+    if (!ferramenta) { erros.push(`Linha ${n}: informe qual é a ferramenta.`); return; }
+    const custo = Number(String(l.custo ?? "").replace(/\./g, "").replace(",", "."));
+    if (l.custo === "" || l.custo === null || l.custo === undefined || Number.isNaN(custo) || custo < 0 || custo > 1_000_000) { erros.push(`Linha ${n} (${ferramenta}, ${mesTxt(l.mes)}): informe o custo (use 0 se não houve custo).`); return; }
+    const forma = FORMAS.includes(l.forma) ? l.forma : "";
+    if (custo > 0 && !forma) { erros.push(`Linha ${n} (${ferramenta}, ${mesTxt(l.mes)}): escolha a forma de pagamento.`); return; }
+    const finalidade = limpa(l.finalidade, 1000), justificativa = limpa(l.justificativa, 1000);
+    if (finalidade.length < 5) { erros.push(`Linha ${n} (${ferramenta}, ${mesTxt(l.mes)}): descreva para que é usada.`); return; }
+    if (justificativa.length < 5) { erros.push(`Linha ${n} (${ferramenta}, ${mesTxt(l.mes)}): escreva a justificativa.`); return; }
+    linhasOk.push({ mes: l.mes, ferramenta, custo: Math.round(custo * 100) / 100, forma: forma || "—", finalidade, justificativa });
   });
-  return { erros, dados: { nome, email, area, ferramentas } };
+  return { erros, dados: { nome, email, area, linhas: linhasOk } };
 }
 
 function admin(req, url) {
@@ -76,7 +74,7 @@ function paginaResultados(token) {
     .map(([k, v]) => `<div class="card"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
   const ferr = Object.keys(pivot).sort((a, b) => porFerr[b] - porFerr[a]);
   const pv = `<table><thead><tr><th>Ferramenta</th>${MESES.map((m) => `<th class="n">${mesTxt(m)}</th>`).join("")}<th class="n">Total</th></tr></thead><tbody>${ferr.map((f) => `<tr><td>${esc(f)}</td>${MESES.map((m) => `<td class="n">${pivot[f][m] ? brl(pivot[f][m]) : "–"}</td>`).join("")}<td class="n"><b>${brl(porFerr[f])}</b></td></tr>`).join("")}<tr class="tot"><td>Total</td>${MESES.map((m) => `<td class="n">${porMes[m] ? brl(porMes[m]) : "–"}</td>`).join("")}<td class="n">${brl(total)}</td></tr></tbody></table>`;
-  const det = envios.slice().reverse().map((e) => `<details><summary><b>${esc(e.nome)}</b> · ${esc(e.area)} · ${esc(e.email)} <span class="mut">· ${esc(new Date(e.recebidoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }))}</span></summary>${e.ferramentas.map((f) => `<div class="fe"><p><b>${esc(f.ferramenta)}</b> — ${f.meses.map((m) => `${mesTxt(m.mes)}: ${brl(m.custo)} (${esc(m.forma)})`).join(" · ")}</p><p><i>Uso:</i> ${esc(f.finalidade)}</p><p><i>Justificativa:</i> ${esc(f.justificativa)}</p></div>`).join("")}</details>`).join("") || "<p class='mut'>Nenhuma resposta ainda.</p>";
+  const det = envios.slice().reverse().map((e) => { const ls = linhas([e]).sort((x, y) => x.mes.localeCompare(y.mes) || x.ferramenta.localeCompare(y.ferramenta)); return `<details><summary><b>${esc(e.nome)}</b> · ${esc(e.area)} · ${esc(e.email)} <span class="mut">· ${ls.length} linhas · ${esc(new Date(e.recebidoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }))}</span></summary><table><thead><tr><th>Mês</th><th>Ferramenta</th><th class="n">Custo</th><th>Pagamento</th><th>Uso / finalidade</th><th>Justificativa</th></tr></thead><tbody>${ls.map((l) => `<tr><td>${mesTxt(l.mes)}</td><td>${esc(l.ferramenta)}</td><td class="n">${brl(l.custo)}</td><td>${esc(l.forma)}</td><td class="wrap">${esc(l.finalidade)}</td><td class="wrap">${esc(l.justificativa)}</td></tr>`).join("")}</tbody></table></details>`; }).join("") || "<p class='mut'>Nenhuma resposta ainda.</p>";
   return html("resultados.html").replace("{{CARDS}}", cards).replace("{{PIVOT}}", L.length ? pv : "<p class='mut'>Sem dados ainda.</p>").replace("{{DETALHE}}", det).replace("{{CSV}}", `/resultados.csv?token=${encodeURIComponent(token)}`);
 }
 

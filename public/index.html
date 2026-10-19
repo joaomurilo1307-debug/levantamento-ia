@@ -39,6 +39,12 @@
   .ok { text-align:center; padding:40px 18px; }
   .ok h2 { font-size:22px; color:var(--brand-d); }
   .nota { font-size:12.5px; color:var(--mut); margin-top:6px; }
+  .linha { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--bg); }
+  .l1 { display:grid; grid-template-columns:110px 1.3fr 1fr 130px 1.3fr; gap:10px; } .l2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+  .linha label { margin:0 0 3px; font-size:12px; color:var(--mut); font-weight:600; } .linha textarea { min-height:52px; }
+  @media (max-width: 760px) { .l1 { grid-template-columns:1fr 1fr; } .l2 { grid-template-columns:1fr; } }
+  .lbt { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; } .lbt .num { margin-right:auto; font-weight:700; font-size:13px; color:var(--mut); }
+  .acoes { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
   .total { margin-top:8px; font-size:13.5px; color:var(--mut); }
 </style>
 </head>
@@ -47,7 +53,7 @@
   <header>
     <div class="marca">Grupo Consominas · Plano de entendimento e ativação do Claude Teams</div>
     <h1>Levantamento de uso e custo de IA</h1>
-    <p class="intro">Informe as ferramentas de IA usadas e o custo mês a mês, <b>a partir de junho/2026</b>. Inclua o que foi pago no cartão corporativo e também o que entrou como reembolso (cartão pessoal). Preencha uma ferramenta por bloco; se usa várias, adicione quantos blocos precisar.</p>
+    <p class="intro">Informe as ferramentas de IA usadas e o custo mês a mês, <b>a partir de junho/2026</b>. Inclua o que foi pago no cartão corporativo e também o que entrou como reembolso (cartão pessoal). Cada linha é um mês e uma ferramenta; no mesmo mês pode haver quantas linhas precisar.</p>
   </header>
 
   <form id="f" novalidate>
@@ -59,8 +65,12 @@
         <div><label for="area">Área / equipe / contrato</label><input id="area" required placeholder="Ex.: Financeiro, MRN 3687"></div>
       </div>
     </div>
-    <div id="ferramentas"></div>
-    <div style="margin-bottom:18px"><button type="button" id="add">+ Adicionar outra ferramenta</button></div>
+    <div class="card">
+      <h2>Lançamentos</h2>
+      <p class="sub">Cada linha é <b>um mês + uma ferramenta</b>. Pode haver várias linhas no mesmo mês (uma para cada ferramenta ou assinatura). Use “Copiar linha” para repetir os dados trocando só o necessário, e “Repetir nos meses seguintes” para assinaturas fixas. Use custo 0 se usou sem custo.</p>
+      <div id="linhas"></div>
+      <div class="acoes"><button type="button" id="add">+ Adicionar linha</button><span id="resumo" class="total"></span></div>
+    </div>
     <div id="erros" class="erros" hidden></div>
     <button class="pri" id="enviar" type="submit">Enviar respostas</button>
     <p class="nota">As respostas ficam registradas neste sistema e são vistas apenas por quem conduz o levantamento.</p>
@@ -78,52 +88,56 @@ const NOME = {"06":"jun/26","07":"jul/26","08":"ago/26","09":"set/26","10":"out/
 const FERRAMENTAS = ["ChatGPT","Claude","Gemini","Microsoft Copilot","GitHub Copilot","Cursor","Perplexity","Midjourney","NotebookLM","Outra"];
 const FORMAS = ["Cartão corporativo","Reembolso (cartão pessoal)","Outra"];
 const el = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
-const raiz = document.getElementById("ferramentas");
-let n = 0;
+const raiz = document.getElementById("linhas");
+const opt = (arr, sel) => arr.map((x) => `<option value="${x}"${x === sel ? " selected" : ""}>${x}</option>`).join("");
+const attr = (v) => String(v || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const valor = (s) => { const v = Number(String(s).replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(v) ? v : 0; };
 
-function bloco() {
-  n++;
-  const b = el(`<div class="card ferr">
-    <div class="topo"><h2>Ferramenta <span class="num"></span></h2><button type="button" class="del">remover</button></div>
-    <div class="g2">
-      <div><label>Qual ferramenta?</label><select class="fer">${FERRAMENTAS.map((x) => `<option>${x}</option>`).join("")}</select></div>
-      <div class="outraw" hidden><label>Qual?</label><input class="outra" maxlength="80"></div>
+function linha(d = {}) {
+  const b = el(`<div class="linha">
+    <div class="l1">
+      <div><label>Mês</label><select class="mes">${MESES.map((m) => `<option value="${m}"${m === d.mes ? " selected" : ""}>${NOME[m.slice(5)]}</option>`).join("")}</select></div>
+      <div><label>Ferramenta</label><select class="fer">${opt(FERRAMENTAS, d.ferramenta || "ChatGPT")}</select></div>
+      <div class="outraw"${d.ferramenta === "Outra" ? "" : " hidden"}><label>Qual?</label><input class="outra" maxlength="80" value="${attr(d.outra)}"></div>
+      <div><label>Custo do mês (R$)</label><input class="custo" inputmode="decimal" placeholder="0,00" value="${attr(d.custo)}"></div>
+      <div><label>Forma de pagamento</label><select class="forma"><option value="">Escolha…</option>${opt(FORMAS, d.forma)}</select></div>
     </div>
-    <label>Custo mensal e forma de pagamento (deixe em branco o mês em que não usou; use 0 se usou sem custo)</label>
-    <table class="meses"><tbody>${MESES.map((m) => `<tr data-m="${m}"><td class="m">${NOME[m.slice(5)]}</td><td><input class="custo" inputmode="decimal" placeholder="R$ 0,00"></td><td><select class="forma"><option value="">Forma de pagamento…</option>${FORMAS.map((x) => `<option>${x}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table>
-    <div class="helper"><span>Atalho:</span><button type="button" class="lnk rep">repetir o valor e a forma do primeiro mês preenchido nos meses seguintes</button></div>
-    <div class="total"></div>
-    <label>Uso / finalidade — para que a ferramenta tem sido usada?</label>
-    <textarea class="fin" maxlength="1500"></textarea>
-    <label>Justificativa — por que é necessária?</label>
-    <textarea class="jus" maxlength="1500"></textarea>
+    <div class="l2">
+      <div><label>Uso / finalidade (para que é usada)</label><textarea class="fin" maxlength="1000">${attr(d.finalidade)}</textarea></div>
+      <div><label>Justificativa (por que é necessária)</label><textarea class="jus" maxlength="1000">${attr(d.justificativa)}</textarea></div>
+    </div>
+    <div class="lbt"><span class="num"></span><button type="button" class="lnk cop">Copiar linha</button><button type="button" class="lnk rep">Repetir nos meses seguintes</button><button type="button" class="del">remover</button></div>
   </div>`);
   const fer = b.querySelector(".fer");
   fer.addEventListener("change", () => { b.querySelector(".outraw").hidden = fer.value !== "Outra"; });
-  b.querySelector(".del").addEventListener("click", () => { if (document.querySelectorAll(".ferr").length > 1) { b.remove(); numerar(); } });
+  b.addEventListener("input", resumo);
+  b.querySelector(".del").addEventListener("click", () => { if (raiz.children.length > 1) { b.remove(); numerar(); } });
+  b.querySelector(".cop").addEventListener("click", () => { const n = linha(ler(b)); b.after(n); numerar(); n.querySelector(".custo").focus(); });
   b.querySelector(".rep").addEventListener("click", () => {
-    const linhas = [...b.querySelectorAll("tr")]; const i = linhas.findIndex((r) => r.querySelector(".custo").value.trim() !== "");
-    if (i < 0) return; const c = linhas[i].querySelector(".custo").value, f = linhas[i].querySelector(".forma").value;
-    linhas.slice(i + 1).forEach((r) => { r.querySelector(".custo").value = c; r.querySelector(".forma").value = f; }); total(b);
+    const base = ler(b), i = MESES.indexOf(base.mes); let ref = b;
+    MESES.slice(i + 1).forEach((m) => {
+      const jaTem = [...raiz.children].some((x) => { const l = ler(x); return l.mes === m && l.ferramenta === base.ferramenta && l.outra === base.outra && l.forma === base.forma; });
+      if (jaTem) return; const n = linha({ ...base, mes: m }); ref.after(n); ref = n;
+    });
+    numerar();
   });
-  b.addEventListener("input", () => total(b));
-  raiz.appendChild(b); numerar();
+  return b;
 }
-function numerar() { document.querySelectorAll(".ferr").forEach((b, i) => { b.querySelector(".num").textContent = i + 1; }); }
-function valor(s) { const v = Number(String(s).replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(v) ? v : 0; }
-function total(b) { const t = [...b.querySelectorAll(".custo")].reduce((s, i) => s + valor(i.value), 0); b.querySelector(".total").textContent = t ? "Total informado: R$ " + t.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : ""; }
-
+function ler(b) { return { mes: b.querySelector(".mes").value, ferramenta: b.querySelector(".fer").value, outra: b.querySelector(".outra").value, custo: b.querySelector(".custo").value, forma: b.querySelector(".forma").value, finalidade: b.querySelector(".fin").value, justificativa: b.querySelector(".jus").value }; }
+function numerar() { [...raiz.children].forEach((b, i) => { b.querySelector(".num").textContent = "Linha " + (i + 1); }); resumo(); }
+function resumo() {
+  const ls = [...raiz.children].map(ler); const t = ls.reduce((s, l) => s + valor(l.custo), 0);
+  document.getElementById("resumo").textContent = ls.length + (ls.length === 1 ? " linha" : " linhas") + (t ? " · total informado: R$ " + t.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "");
+}
 function coletar() {
-  return {
-    nome: document.getElementById("nome").value, email: document.getElementById("email").value, area: document.getElementById("area").value,
-    ferramentas: [...document.querySelectorAll(".ferr")].map((b) => ({
-      ferramenta: b.querySelector(".fer").value, outra: b.querySelector(".outra").value, finalidade: b.querySelector(".fin").value, justificativa: b.querySelector(".jus").value,
-      meses: [...b.querySelectorAll("tr")].map((r) => ({ mes: r.dataset.m, custo: r.querySelector(".custo").value.trim() === "" ? "" : String(valor(r.querySelector(".custo").value)).replace(".", ","), forma: r.querySelector(".forma").value })),
-    })),
-  };
+  return { nome: document.getElementById("nome").value, email: document.getElementById("email").value, area: document.getElementById("area").value,
+    linhas: [...raiz.children].map((b) => { const l = ler(b); return { ...l, custo: l.custo.trim() === "" ? "" : String(valor(l.custo)).replace(".", ",") }; }) };
 }
-document.getElementById("add").addEventListener("click", bloco);
-document.getElementById("outra").addEventListener("click", () => { document.getElementById("fim").hidden = true; document.getElementById("f").hidden = false; raiz.innerHTML = ""; n = 0; bloco(); window.scrollTo(0, 0); });
+document.getElementById("add").addEventListener("click", () => {
+  const ult = raiz.lastElementChild; const base = ult ? ler(ult) : {};
+  const n = linha({ ...base, custo: "" }); raiz.appendChild(n); numerar(); n.querySelector(".fer").focus();
+});
+document.getElementById("outra").addEventListener("click", () => { document.getElementById("fim").hidden = true; document.getElementById("f").hidden = false; raiz.innerHTML = ""; raiz.appendChild(linha({ mes: MESES[0] })); numerar(); window.scrollTo(0, 0); });
 document.getElementById("f").addEventListener("submit", async (e) => {
   e.preventDefault();
   const box = document.getElementById("erros"), btn = document.getElementById("enviar"); box.hidden = true; btn.disabled = true; btn.textContent = "Enviando…";
@@ -135,7 +149,7 @@ document.getElementById("f").addEventListener("submit", async (e) => {
   } catch { box.textContent = "Não foi possível enviar agora. Tente novamente em instantes."; box.hidden = false; }
   btn.disabled = false; btn.textContent = "Enviar respostas";
 });
-bloco();
+raiz.appendChild(linha({ mes: MESES[0] })); numerar();
 </script>
 </body>
 </html>
