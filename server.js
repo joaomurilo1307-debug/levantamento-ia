@@ -90,7 +90,7 @@ const server = http.createServer((req, res) => {
   const send = (code, body, type = "text/html; charset=utf-8", extra = {}) => { res.writeHead(code, { "Content-Type": type, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", ...extra }); res.end(body); };
   try {
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) return send(200, html("index.html"));
-    if (req.method === "GET" && url.pathname === "/health") return send(200, "ok", "text/plain");
+    if (req.method === "GET" && url.pathname === "/health") { try { fs.accessSync(DATA_DIR, fs.constants.W_OK); return send(200, "ok: gravacao liberada", "text/plain"); } catch { return send(500, "sem permissao de gravacao", "text/plain"); } }
     if (req.method === "POST" && url.pathname === "/api/enviar") {
       const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
       const agora = Date.now(), lista = (tentativas.get(ip) || []).filter((t) => agora - t < 60_000);
@@ -102,7 +102,7 @@ const server = http.createServer((req, res) => {
         const { erros, dados } = validar(b);
         if (erros.length) return send(422, JSON.stringify({ erros }), "application/json");
         const envio = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), recebidoEm: new Date().toISOString(), ...dados };
-        fs.appendFileSync(ARQ, JSON.stringify(envio) + "\n");
+        try { fs.appendFileSync(ARQ, JSON.stringify(envio) + "\n"); } catch (e) { console.error("falha ao gravar:", e.message); return send(500, JSON.stringify({ erros: ["Não foi possível salvar agora. Tente novamente em instantes."] }), "application/json"); }
         send(200, JSON.stringify({ ok: true, id: envio.id }), "application/json");
       });
       return;
@@ -112,4 +112,5 @@ const server = http.createServer((req, res) => {
     send(404, "Não encontrado", "text/plain; charset=utf-8");
   } catch (e) { send(500, "Erro interno", "text/plain; charset=utf-8"); }
 });
+process.on("uncaughtException", (e) => console.error("erro nao tratado:", e.message));
 server.listen(PORT, () => console.log("levantamento-ia na porta " + PORT));
